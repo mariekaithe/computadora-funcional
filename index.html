@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Computadora Funcional — Arquitectura Von Neumann</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d0f14;
+    --bg2: #13161d;
+    --bg3: #1a1e28;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --text: #e8eaf0;
+    --muted: #7a7f91;
+    --blue: #4a9eff;
+    --blue-bg: rgba(74,158,255,0.1);
+    --blue-border: rgba(74,158,255,0.25);
+    --green: #2dd4a0;
+    --green-bg: rgba(45,212,160,0.1);
+    --green-border: rgba(45,212,160,0.25);
+    --pink: #f06292;
+    --pink-bg: rgba(240,98,146,0.1);
+    --pink-border: rgba(240,98,146,0.25);
+    --amber: #fbbf24;
+    --amber-bg: rgba(251,191,36,0.1);
+    --amber-border: rgba(251,191,36,0.25);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --font: 'Space Grotesk', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+
+  /* Subtle grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(74,158,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(74,158,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page { max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  /* ─── HEADER ─── */
+  .header { text-align: center; margin-bottom: 2.5rem; }
+  .header-badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--blue);
+    background: var(--blue-bg);
+    border: 1px solid var(--blue-border);
+    border-radius: 20px;
+    padding: 4px 14px;
+    letter-spacing: 0.08em;
+    margin-bottom: 14px;
+  }
+  .header h1 {
+    font-size: clamp(22px, 4vw, 32px);
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
+  .header p { font-size: 14px; color: var(--muted); }
+
+  /* ─── BUSES ─── */
+  .buses { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .bus {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 14px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bus-name { font-family: var(--mono); font-size: 11px; white-space: nowrap; min-width: 130px; }
+  .bus-track {
+    flex: 1; height: 6px; border-radius: 3px;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    overflow: hidden;
+    position: relative;
+  }
+  .bus-track::after {
+    content: '';
+    position: absolute; top: 0; left: -60%; width: 50%; height: 100%;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .bus-track.active::after { opacity: 1; animation: flow 1.4s linear infinite; }
+  @keyframes flow { 0%{left:-60%} 100%{left:110%} }
+  .bus-addr .bus-name { color: var(--blue); }
+  .bus-addr .bus-track { border-color: var(--blue-border); }
+  .bus-addr .bus-track::after { background: linear-gradient(90deg,transparent,var(--blue),transparent); }
+  .bus-data .bus-name { color: var(--green); }
+  .bus-data .bus-track { border-color: var(--green-border); }
+  .bus-data .bus-track::after { background: linear-gradient(90deg,transparent,var(--green),transparent); }
+  .bus-ctrl .bus-name { color: var(--pink); }
+  .bus-ctrl .bus-track { border-color: var(--pink-border); }
+  .bus-ctrl .bus-track::after { background: linear-gradient(90deg,transparent,var(--pink),transparent); }
+  .bus-bits {
+    font-family: var(--mono); font-size: 10px;
+    padding: 2px 8px; border-radius: 20px;
+    white-space: nowrap;
+  }
+  .bus-addr .bus-bits { color: var(--blue); background: var(--blue-bg); }
+  .bus-data .bus-bits { color: var(--green); background: var(--green-bg); }
+  .bus-ctrl .bus-bits { color: var(--pink); background: var(--pink-bg); }
+
+  /* ─── LAYOUT GRID ─── */
+  .grid { display: grid; grid-template-columns: 160px 1fr 160px; gap: 12px; margin-bottom: 16px; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ─── COMPONENT CARD ─── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    flex: 1;
+  }
+  .card:hover { border-color: var(--border2); background: var(--bg3); }
+  .card.selected {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 1px var(--blue), 0 0 20px rgba(74,158,255,0.12);
+  }
+  .card.glow { animation: glowpulse 0.5s ease-in-out 3; }
+  @keyframes glowpulse { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 0 2px var(--blue),0 0 16px rgba(74,158,255,0.2)} }
+  .card-icon { font-size: 20px; margin-bottom: 6px; display: block; }
+  .card-name { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 2px; }
+  .card-sub { font-size: 11px; color: var(--muted); line-height: 1.4; }
+
+  /* ─── CPU CARD ─── */
+  .cpu-card {
+    background: var(--bg2);
+    border: 1px solid var(--blue-border);
+    border-radius: var(--radius);
+    padding: 16px;
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+    box-shadow: 0 0 30px rgba(74,158,255,0.05);
+  }
+  .cpu-card:hover { box-shadow: 0 0 30px rgba(74,158,255,0.1); }
+  .cpu-card.selected { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+  .cpu-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .cpu-title { font-size: 15px; font-weight: 600; color: #fff; }
+  .cpu-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .cpu-badge {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--blue); background: var(--blue-bg);
+    border: 1px solid var(--blue-border);
+    padding: 3px 8px; border-radius: 20px; white-space: nowrap;
+  }
+  .cpu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cpu-unit {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .cpu-unit:hover { background: var(--bg); border-color: var(--border2); }
+  .cpu-unit.lit { background: var(--blue-bg); border-color: var(--blue-border); }
+  .cpu-unit-label { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .cpu-unit-sub { font-size: 10px; color: var(--muted); }
+
+  /* ─── RAM CARD ─── */
+  .ram-card {
+    background: var(--bg2);
+    border: 1px solid var(--green-border);
+    border-radius: var(--radius);
+    padding: 14px;
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+  }
+  .ram-card:hover { box-shadow: 0 0 20px rgba(45,212,160,0.08); }
+  .ram-card.selected { border-color: var(--green); }
+  .ram-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .ram-title { font-size: 14px; font-weight: 600; color: #fff; }
+  .ram-badge {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--pink); background: var(--pink-bg);
+    border: 1px solid var(--pink-border);
+    padding: 2px 8px; border-radius: 20px;
+  }
+  .ram-cells { display: grid; grid-template-columns: repeat(8,1fr); gap: 3px; margin-bottom: 8px; }
+  .ram-cell {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 8px;
+    color: var(--muted);
+    padding: 4px 2px;
+    transition: background 0.3s, color 0.3s;
+  }
+  .ram-cell.active { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
+  .ram-note { font-size: 10px; color: var(--muted); }
+
+  /* ─── INFO PANEL ─── */
+  .info-panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 14px;
+    min-height: 120px;
+    transition: border-color 0.3s;
+  }
+  .info-panel.has-content { border-color: var(--border2); }
+  .info-title { font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 6px; }
+  .info-body { font-size: 13px; color: #9ba3b8; line-height: 1.65; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .tag {
+    font-family: var(--mono); font-size: 10px;
+    padding: 3px 10px; border-radius: 20px;
+  }
+  .tag-blue { color: var(--blue); background: var(--blue-bg); border: 1px solid var(--blue-border); }
+  .tag-green { color: var(--green); background: var(--green-bg); border: 1px solid var(--green-border); }
+  .tag-pink { color: var(--pink); background: var(--pink-bg); border: 1px solid var(--pink-border); }
+  .tag-amber { color: var(--amber); background: var(--amber-bg); border: 1px solid var(--amber-border); }
+  .tag-muted { color: var(--muted); background: var(--bg3); border: 1px solid var(--border); }
+
+  /* ─── SIMULADOR ─── */
+  .sim-panel {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .sim-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
+  .sim-label {
+    font-family: var(--mono); font-size: 11px;
+    color: var(--muted); letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .instr-badge {
+    font-family: var(--mono); font-size: 12px;
+    color: var(--amber); background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    padding: 4px 12px; border-radius: 6px;
+  }
+  .steps-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .step {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 500; color: var(--muted);
+    transition: all 0.3s;
+  }
+  .step.done { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
+  .step.current {
+    background: var(--blue-bg); border-color: var(--blue);
+    color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(74,158,255,0.15);
+  }
+  .log-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    min-height: 64px;
+    color: var(--muted);
+    line-height: 1.7;
+    margin-bottom: 14px;
+  }
+  .log-step { color: var(--blue); font-weight: 500; display: block; }
+  .log-detail { color: var(--text); display: block; margin-top: 2px; }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  button {
+    font-family: var(--font); font-size: 13px; font-weight: 500;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  button:hover { background: var(--bg3); border-color: var(--border2); }
+  button:active { transform: scale(0.97); }
+  button.primary {
+    background: var(--blue-bg); border-color: var(--blue);
+    color: var(--blue);
+  }
+  button.primary:hover { background: rgba(74,158,255,0.18); }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; }
+  .leg { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  .leg-dot { width: 24px; height: 5px; border-radius: 3px; }
+
+  /* ─── FOOTER ─── */
+  .footer {
+    text-align: center;
+    margin-top: 2rem;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    border-top: 1px solid var(--border);
+    padding-top: 1.5rem;
+  }
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 640px) {
+    .grid { grid-template-columns: 1fr; }
+    .col { flex-direction: row; flex-wrap: wrap; }
+    .col .card { min-width: 140px; flex: 1; }
+    .bus-name { min-width: 90px; font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="header">
+    <div class="header-badge">ARQUITECTURA VON NEUMANN · INFOGRAFÍA INTERACTIVA</div>
+    <h1>Diseño Virtual de una Computadora Funcional</h1>
+    <p>Haz clic en cualquier componente · Usa el simulador para ver el ciclo Fetch → Decode → Execute</p>
+  </header>
+
+  <!-- BUSES -->
+  <div class="buses">
+    <div class="bus bus-addr" id="bus-addr">
+      <span class="bus-name">→ Bus de direcciones</span>
+      <div class="bus-track" id="track-addr"></div>
+      <span class="bus-bits">32 bits</span>
+    </div>
+    <div class="bus bus-data" id="bus-data">
+      <span class="bus-name">↕ Bus de datos</span>
+      <div class="bus-track" id="track-data"></div>
+      <span class="bus-bits">64 bits</span>
+    </div>
+    <div class="bus bus-ctrl" id="bus-ctrl">
+      <span class="bus-name">→ Bus de control</span>
+      <div class="bus-track" id="track-ctrl"></div>
+      <span class="bus-bits">señales</span>
+    </div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="grid">
+
+    <!-- LEFT: E/S -->
+    <div class="col">
+      <div class="card" data-id="input" onclick="sel('input')">
+        <span class="card-icon">⌨️</span>
+        <div class="card-name">Entrada</div>
+        <div class="card-sub">Teclado, ratón, sensores</div>
+      </div>
+      <div class="card" data-id="output" onclick="sel('output')">
+        <span class="card-icon">🖥️</span>
+        <div class="card-name">Salida</div>
+        <div class="card-sub">Monitor, impresora, altavoces</div>
+      </div>
+      <div class="card" data-id="storage" onclick="sel('storage')">
+        <span class="card-icon">💾</span>
+        <div class="card-name">Almacenamiento</div>
+        <div class="card-sub">HDD / SSD — secundario</div>
+      </div>
+    </div>
+
+    <!-- CENTER: CPU + RAM -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="cpu-card" data-id="cpu" onclick="sel('cpu')">
+        <div class="cpu-header">
+          <div>
+            <div class="cpu-title">🔲 CPU — Unidad Central de Proceso</div>
+            <div class="cpu-sub">El cerebro de la computadora</div>
+          </div>
+          <span class="cpu-badge">núcleo ×4</span>
+        </div>
+        <div class="cpu-grid">
+          <div class="cpu-unit" id="unit-cu" onclick="event.stopPropagation();sel('cu')">
+            <div class="cpu-unit-label">🎛 UC</div>
+            <div class="cpu-unit-sub">Unidad de Control</div>
+          </div>
+          <div class="cpu-unit" id="unit-alu" onclick="event.stopPropagation();sel('alu')">
+            <div class="cpu-unit-label">➕ ALU</div>
+            <div class="cpu-unit-sub">Aritmético-Lógica</div>
+          </div>
+          <div class="cpu-unit" id="unit-reg" onclick="event.stopPropagation();sel('reg')">
+            <div class="cpu-unit-label">📋 Registros</div>
+            <div class="cpu-unit-sub">PC · IR · MAR · MDR</div>
+          </div>
+          <div class="cpu-unit" id="unit-cache" onclick="event.stopPropagation();sel('cache')">
+            <div class="cpu-unit-label">⚡ Caché</div>
+            <div class="cpu-unit-sub">L1 / L2 / L3</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ram-card" data-id="ram" onclick="sel('ram')">
+        <div class="ram-header">
+          <div class="ram-title">🧠 RAM — Memoria Principal</div>
+          <span class="ram-badge">volátil</span>
+        </div>
+        <div class="ram-cells" id="ram-cells"></div>
+        <div class="ram-note">Cada celda = 1 byte · direccionable individualmente · ~60 ns</div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="col">
+      <div class="card" data-id="rom" onclick="sel('rom')">
+        <span class="card-icon">🔒</span>
+        <div class="card-name">ROM / BIOS</div>
+        <div class="card-sub">Firmware de arranque</div>
+      </div>
+      <div class="card" data-id="gpu" onclick="sel('gpu')">
+        <span class="card-icon">🎮</span>
+        <div class="card-name">GPU</div>
+        <div class="card-sub">Coprocesador gráfico paralelo</div>
+      </div>
+      <div class="card" data-id="io" onclick="sel('io')">
+        <span class="card-icon">🔌</span>
+        <div class="card-name">Controlador E/S</div>
+        <div class="card-sub">USB, PCIe, SATA, I²C</div>
+      </div>
+    </div>
+
+  </div><!-- /grid -->
+
+  <!-- INFO PANEL -->
+  <div class="info-panel" id="info-panel">
+    <div class="info-title" id="info-title">Selecciona un componente para ver su descripción</div>
+    <div class="info-body" id="info-body">Haz clic en cualquier bloque del diagrama para explorar su función técnica, cómo procesa datos y cómo se comunica con los demás componentes a través de los buses.</div>
+    <div class="tags" id="info-tags"></div>
+  </div>
+
+  <!-- SIMULADOR -->
+  <div class="sim-panel">
+    <div class="sim-header">
+      <span class="sim-label">Simulador — ciclo de instrucción</span>
+      <span class="instr-badge">ADD R1, R2, R3</span>
+    </div>
+    <div class="steps-row" id="steps-row"></div>
+    <div class="log-box" id="log-box"><span style="color:var(--muted)">Listo. Presiona "Siguiente paso" para iniciar…</span></div>
+    <div class="btn-row">
+      <button class="primary" id="btn-next" onclick="nextStep()">▶ Siguiente paso</button>
+      <button onclick="resetSim()">↺ Reiniciar</button>
+      <button onclick="runAll()">⚡ Ejecutar todo</button>
+    </div>
+    <div class="legend">
+      <div class="leg"><span class="leg-dot" style="background:var(--blue)"></span>Bus de direcciones</div>
+      <div class="leg"><span class="leg-dot" style="background:var(--green)"></span>Bus de datos</div>
+      <div class="leg"><span class="leg-dot" style="background:var(--pink)"></span>Bus de control</div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <div style="margin-bottom:6px;font-size:13px;color:#e8eaf0;font-family:'Space Grotesk',sans-serif;font-weight:500;">Proyecto Final — Arquitectura de Computadoras</div>
+    <div style="display:flex;justify-content:center;gap:32px;flex-wrap:wrap;margin-bottom:8px;">
+      <span>Zueydime González &nbsp;·&nbsp; <span style="color:var(--blue)">8-970-2349</span></span>
+      <span>Marvin Oviedo &nbsp;·&nbsp; <span style="color:var(--blue)">8-798-2197</span></span>
+    </div>
+    <div style="color:var(--muted)">Computadora Funcional · Arquitectura Von Neumann</div>
+  </footer>
+
+</div><!-- /page -->
+
+<script>
+const INFO = {
+  input:  { title:'Dispositivos de entrada', body:'Convierten información del mundo real en señales digitales que la CPU puede procesar. El controlador de E/S gestiona la comunicación y genera interrupciones para avisar a la CPU cuando hay datos listos. Ejemplos: teclado (PS/2, USB HID), ratón, micrófono, cámara, sensores de temperatura.', tags:['blue:Bus de datos','pink:Interrupciones','muted:Periférico'] },
+  output: { title:'Dispositivos de salida', body:'Transforman los datos procesados en información perceptible por el usuario. La CPU escribe en los buffers de los controladores, que a su vez manejan el hardware de forma independiente usando DMA para no bloquear al procesador.', tags:['green:DMA','blue:Bus de datos','muted:Buffer'] },
+  storage:{ title:'Almacenamiento secundario', body:'Memoria no volátil de gran capacidad. Los datos deben copiarse a la RAM antes de ser procesados. SSD: ~50-100 µs de latencia. HDD: ~5-10 ms. Se conecta mediante SATA, NVMe (PCIe) o USB. Conserva la información al apagar el equipo.', tags:['amber:No volátil','blue:NVMe / SATA','muted:Persistente'] },
+  cpu:    { title:'CPU — Unidad Central de Proceso', body:'Ejecuta el ciclo de instrucción: Fetch (busca la instrucción en RAM), Decode (la decodifica) y Execute (la ejecuta). Coordina todos los componentes mediante señales en el bus de control. Contiene la UC, la ALU, los registros y la caché.', tags:['blue:Ciclo F-D-E','pink:Bus de control','amber:GHz'] },
+  cu:     { title:'UC — Unidad de Control', body:'El director de orquesta de la CPU. Interpreta el código de operación (opcode) de cada instrucción y genera las señales de control que activan la ALU, seleccionan registros y habilitan lecturas/escrituras en memoria. Funciona mediante microprogramas o lógica cableada.', tags:['pink:Señales de control','blue:Decodificador','amber:Microprograma'] },
+  alu:    { title:'ALU — Unidad Aritmético-Lógica', body:'Realiza operaciones matemáticas (suma, resta, multiplicación) y lógicas (AND, OR, NOT, XOR, desplazamientos). Sus operandos llegan desde los registros y el resultado se escribe de vuelta en un registro, actualizando los flags de estado: Zero, Carry, Overflow, Sign.', tags:['blue:Operaciones binarias','green:Flags de estado','pink:Resultado → registro'] },
+  reg:    { title:'Registros del procesador', body:'PC (Program Counter): apunta a la siguiente instrucción. IR (Instruction Register): almacena la instrucción en curso. MAR (Memory Address Register): dirección de memoria a acceder. MDR (Memory Data Register): dato leído o a escribir. Son la memoria más rápida del sistema (~1 ns, dentro del chip).', tags:['blue:PC / IR','green:MAR / MDR','amber:~1 ns'] },
+  cache:  { title:'Memoria caché', body:'Intermediaria entre la velocidad de la CPU (~1 ns) y la RAM (~60 ns). L1 (64 KB, ~1-2 ns) es privada por núcleo. L2 (512 KB, ~4 ns) también privada. L3 (8-32 MB, ~10-20 ns) es compartida entre núcleos. Un "fallo de caché" copia el bloque desde la RAM.', tags:['amber:Localidad temporal','blue:Hit / Miss','green:Jerarquía'] },
+  ram:    { title:'RAM — Memoria de acceso aleatorio', body:'Almacena el programa en ejecución y sus datos activos. Es volátil: pierde su contenido al apagar. Se direcciona byte a byte via el bus de direcciones. CPU → MAR recibe la dirección → señal READ → dato llega al MDR por el bus de datos.', tags:['pink:Volátil','blue:Direccionable','green:~60 ns','amber:DDR5'] },
+  rom:    { title:'ROM / BIOS / UEFI', body:'Memoria de solo lectura con el firmware de arranque. Al encender, la CPU salta a la dirección de reset de la ROM. El BIOS/UEFI realiza el POST (Power-On Self-Test), detecta el hardware y carga el bootloader del sistema operativo desde el almacenamiento.', tags:['amber:No volátil','blue:POST','pink:Firmware'] },
+  gpu:    { title:'GPU — Unidad de Procesamiento Gráfico', body:'Coprocesador con miles de núcleos pequeños optimizado para operaciones paralelas sobre matrices (píxeles, tensores). Se comunica con la CPU vía PCIe (16 GB/s+). También se usa para IA, simulaciones físicas y criptografía. Tiene su propia VRAM.', tags:['blue:PCIe','green:Paralelismo','amber:VRAM'] },
+  io:     { title:'Controlador de E/S', body:'Puente entre la CPU y los periféricos. Gestiona protocolos: USB, SATA, I²C, SPI, PCIe. Opera por polling (CPU pregunta continuamente), interrupciones (periférico avisa a la CPU) o DMA (el periférico accede a RAM sin pasar por la CPU, liberándola para otras tareas).', tags:['pink:Interrupciones','green:DMA','blue:Protocolos'] }
+};
+
+const STEPS = [
+  { label:'1. Fetch — dirección', detail:'PC = 0x0040 → MAR recibe la dirección de la próxima instrucción.', buses:['addr'], hl:['reg','ram'], units:['cu','reg'] },
+  { label:'2. Fetch — lectura de memoria', detail:'Bus de control activa READ. RAM envía la instrucción al MDR.', buses:['ctrl','data'], hl:['ram'], units:['cu','reg'] },
+  { label:'3. Fetch — cargar IR', detail:'MDR → IR. Instrucción almacenada: opcode = ADD (0x01).', buses:['data'], hl:['cpu'], units:['reg'] },
+  { label:'4. PC = PC + 4', detail:'El contador de programa avanza para apuntar a la siguiente instrucción.', buses:[], hl:[], units:['reg','cu'] },
+  { label:'5. Decode — decodificar', detail:'La UC decodifica: opcode=ADD, operandos=R2,R3, destino=R1.', buses:[], hl:['cpu'], units:['cu'] },
+  { label:'6. Leer operandos', detail:'Registros R2 = 12 y R3 = 8 se envían como operandos a la ALU.', buses:[], hl:['cpu'], units:['reg','alu'] },
+  { label:'7. Execute — ALU opera', detail:'ALU: 12 + 8 = 20. Flags: Zero=0, Carry=0, Overflow=0.', buses:[], hl:['cpu'], units:['alu'] },
+  { label:'8. Write-back → R1', detail:'Resultado 20 escrito en R1. Ciclo completado. ✔', buses:[], hl:['cpu'], units:['reg','alu'] }
+];
+
+let cur = -1, done = false, timer = null;
+
+// Build RAM cells
+const RC = document.getElementById('ram-cells');
+const RV = ['MOV','ADD','CMP','JMP','0x0A','0x0C','0x1F','0x00','0xFF','0x42','NOP','RET','0x10','0x20','0x30','0x04'];
+for(let i=0;i<16;i++){
+  const d=document.createElement('div');
+  d.className='ram-cell'; d.id='rc'+i; d.textContent=RV[i]; RC.appendChild(d);
+}
+
+// Build step dots
+function buildSteps(){
+  const c=document.getElementById('steps-row'); c.innerHTML='';
+  STEPS.forEach((_,i)=>{
+    const d=document.createElement('div'); d.className='step'; d.id='step'+i; d.textContent=i+1; c.appendChild(d);
+  });
+}
+buildSteps();
+
+function sel(id){
+  document.querySelectorAll('.card,.cpu-card,.ram-card').forEach(e=>e.classList.remove('selected'));
+  document.querySelectorAll('.cpu-unit').forEach(e=>e.classList.remove('lit'));
+  const el=document.querySelector(`[data-id="${id}"]`)||document.getElementById('unit-'+id);
+  if(el) el.classList.add(el.classList.contains('cpu-unit')?'lit':'selected');
+  const inf=INFO[id]; if(!inf) return;
+  document.getElementById('info-title').textContent=inf.title;
+  document.getElementById('info-body').textContent=inf.body;
+  const tc=document.getElementById('info-tags'); tc.innerHTML='';
+  inf.tags.forEach(t=>{
+    const[cls,txt]=t.split(':');
+    const s=document.createElement('span'); s.className='tag tag-'+cls; s.textContent=txt; tc.appendChild(s);
+  });
+  document.getElementById('info-panel').classList.add('has-content');
+}
+
+function activateBuses(buses){
+  ['addr','data','ctrl'].forEach(b=>{
+    document.getElementById('track-'+b).classList.toggle('active', buses.includes(b));
+  });
+}
+
+function hlComps(ids){
+  document.querySelectorAll('.card,.cpu-card,.ram-card').forEach(e=>e.classList.remove('glow'));
+  ids.forEach(id=>{
+    const el=document.querySelector(`[data-id="${id}"]`);
+    if(el){el.classList.remove('glow'); void el.offsetWidth; el.classList.add('glow');}
+  });
+}
+
+function hlUnits(ids){
+  document.querySelectorAll('.cpu-unit').forEach(e=>e.classList.remove('lit'));
+  ids.forEach(id=>{ const u=document.getElementById('unit-'+id); if(u) u.classList.add('lit'); });
+}
+
+// Animate RAM cells for fetch step
+function animRam(){
+  const cells=[0,1,2,3];
+  cells.forEach(i=>document.getElementById('rc'+i).classList.add('active'));
+  setTimeout(()=>cells.forEach(i=>document.getElementById('rc'+i).classList.remove('active')), 1200);
+}
+
+function nextStep(){
+  if(done){resetSim();return;}
+  cur++;
+  if(cur>=STEPS.length){
+    done=true;
+    document.getElementById('btn-next').textContent='↺ Nuevo ciclo';
+    return;
+  }
+  const s=STEPS[cur];
+  for(let i=0;i<cur;i++){const d=document.getElementById('step'+i);if(d){d.className='step done';d.textContent='✓';}}
+  const cd=document.getElementById('step'+cur); if(cd) cd.className='step current';
+  activateBuses(s.buses);
+  hlComps(s.hl);
+  hlUnits(s.units||[]);
+  if(cur===1) animRam();
+  const lb=document.getElementById('log-box');
+  lb.innerHTML=`<span class="log-step">${s.label}</span><span class="log-detail">${s.detail}</span>`;
+}
+
+function resetSim(){
+  if(timer){clearInterval(timer);timer=null;}
+  cur=-1; done=false;
+  document.getElementById('btn-next').textContent='▶ Siguiente paso';
+  buildSteps();
+  activateBuses([]);
+  document.querySelectorAll('.card,.cpu-card,.ram-card').forEach(e=>e.classList.remove('glow','selected'));
+  document.querySelectorAll('.cpu-unit').forEach(e=>e.classList.remove('lit'));
+  document.getElementById('log-box').innerHTML='<span style="color:var(--muted)">Listo. Presiona "Siguiente paso" para iniciar…</span>';
+}
+
+function runAll(){
+  if(timer) clearInterval(timer);
+  resetSim();
+  let i=0;
+  timer=setInterval(()=>{nextStep();i++;if(i>=STEPS.length)clearInterval(timer);},850);
+}
+</script>
+</body>
+</html>
